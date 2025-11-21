@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knowledge Explorer Quiz</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load jQuery -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- Load Firebase -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        setLogLevel('Debug');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-quiz-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        let app, db, auth, userId = 'anonymous';
+
+        $(document).ready(function() {
+            if (firebaseConfig) {
+                try {
+                    app = initializeApp(firebaseConfig);
+                    db = getFirestore(app);
+                    auth = getAuth(app);
+                    onAuthStateChanged(auth, (user) => {
+                        if (user) { userId = user.uid; $('#current-user-id').text(userId); }
+                    });
+                    const signInPromise = initialAuthToken ? signInWithCustomToken(auth, initialAuthToken) : signInAnonymously(auth);
+                    signInPromise.catch(e => console.error("Auth failed:", e));
+                } catch (e) {
+                    console.error("Firebase Init Failed:", e);
+                }
+            }
+            window.db = db;
+            window.appId = appId;
+            window.getUserId = () => auth?.currentUser?.uid || userId;
+            
+            // Start the application on the sign-up view
+            $('#signup-view').show();
+            
+            // Initial validation check to disable button
+            checkFormValidity();
+        });
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        /* Creative Background: Subtle texture for a "notebook" feel */
+        .page-background { 
+            background-color: #f7fafc; /* light blue-gray */
+            background-image: linear-gradient(90deg, #e2e8f0 1px, transparent 1px), 
+                              linear-gradient(180deg, #e2e8f0 1px, transparent 1px);
+            background-size: 50px 50px;
+        }
+        .card { 
+            background-color: white; 
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1), 0 0 0 5px #3b82f6; /* Blue border effect */
+            border-radius: 1rem;
+            border: 2px solid #3b82f6; /* Accent border */
+        }
+        .input-field { 
+            transition: border-color 0.3s, box-shadow 0.3s;
+            border-width: 2px;
+            border-color: #93c5fd; /* Default light blue border */
+        }
+        .option-button { 
+            transition: all 0.2s; 
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .option-button:hover:not(:disabled) { 
+            transform: scale(1.02); 
+            box-shadow: 0 6px 12px rgba(59, 130, 246, 0.3); /* Blue hover glow */
+            background-color: #eff6ff; /* Very light blue on hover */
+        }
+        
+        .question-card { 
+            display: none; 
+            border-radius: 0.75rem;
+            margin-bottom: 1rem;
+            background-color: #f0f9ff; /* Very light blue background */
+            box-shadow: inset 0 0 0 2px #93c5fd; /* Inner blue line */
+        } 
+
+        .toggle-question-btn {
+            display: flex;
+            align-items: center;
+        }
+    </style>
+</head>
+<body class="page-background text-gray-800 min-h-screen flex items-center justify-center p-4">
+
+    <!-- Global Message Box -->
+    <div id="message-box" class="fixed top-4 left-1/2 -translate-x-1/2 p-3 bg-red-500 text-white rounded-lg shadow-xl z-50 hidden"></div>
+
+    <div class="w-full max-w-lg">
+
+        <!-- 1. Sign-up Form View (Initial View) -->
+        <div id="signup-view" class="card p-8 space-y-6 hidden">
+            <h1 class="text-4xl font-black text-indigo-700 text-center border-b-4 border-indigo-300 pb-2">
+                🚀 Welcome!
+            </h1>
+            <p class="text-gray-600 text-center">Fill out the form to start your knowledge journey.</p>
+            
+            <form id="signup-form" class="space-y-4">
+                <!-- Name Input -->
+                <div>
+                    <label for="name" class="block text-sm font-medium text-gray-700">Full Name</label>
+                    <input type="text" id="name" required placeholder="Jane Doe" class="input-field mt-1 block w-full px-4 py-2 bg-gray-50 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                    <span class="error-message text-xs mt-1 block h-4"></span>
+                </div>
+                <!-- Course & Section Input -->
+                <div>
+                    <label for="course-section" class="block text-sm font-medium text-gray-700">Course & Section</label>
+                    <input type="text" id="course-section" required placeholder="BSIT - 4A" class="input-field mt-1 block w-full px-4 py-2 bg-gray-50 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                    <span class="error-message text-xs mt-1 block h-4"></span>
+                </div>
+                <!-- Email Input -->
+                <div>
+                    <label for="email" class="block text-sm font-medium text-gray-700">Email Address</label>
+                    <input type="email" id="email" required placeholder="jane.doe@school.edu" class="input-field mt-1 block w-full px-4 py-2 bg-gray-50 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                    <span class="error-message text-xs mt-1 block h-4"></span>
+                </div>
+                
+                <button type="submit" id="start-quiz-btn" disabled
+                        class="w-full py-3 bg-gray-400 text-gray-800 font-black rounded-full transition duration-150 ease-in-out disabled:opacity-70">
+                    Start Quiz
+                </button>
+            </form>
+            
+            <!-- User ID Footer -->
+            <div class="text-xs text-gray-400 text-center pt-2 border-t border-gray-200 mt-4">Session ID: <span id="current-user-id">Loading...</span></div>
+        </div>
+
+        <!-- 2. Quiz View (Hidden initially) -->
+        <div id="quiz-view" class="card p-8 space-y-6 hidden">
+            <h1 class="text-4xl font-black text-indigo-700 text-center border-b-4 border-indigo-300 pb-2">
+                🎓 Knowledge Explorer
+            </h1>
+
+            <!-- Quiz Header -->
+            <div class="flex justify-between items-center pb-4 pt-2">
+                <div class="text-xl font-extrabold text-indigo-600">
+                    Question: <span id="current-q-number">1</span>/<span class="text-gray-500">10</span>
+                </div>
+                <div class="text-xl font-extrabold text-gray-700">
+                    Score: <span id="score-tally" class="text-yellow-600">0</span>
+                </div>
+            </div>
+
+            <!-- Quiz Questions Container -->
+            <div id="questions-container" class="space-y-4">
+                <!-- All 10 questions will be rendered here on startup -->
+            </div>
+
+            <!-- Navigation Buttons -->
+            <div id="nav-buttons" class="flex justify-between pt-4 border-t border-gray-200">
+                <button id="prev-btn" disabled
+                        class="py-2 px-4 bg-gray-400 text-gray-800 font-semibold rounded-full transition duration-150 ease-in-out disabled:opacity-50 hover:bg-gray-500">
+                    &#9664; Previous
+                </button>
+                <button id="next-btn"
+                        class="py-2 px-6 bg-indigo-600 text-white font-semibold rounded-full transition duration-150 ease-in-out disabled:opacity-50 hover:bg-indigo-700 shadow-md shadow-indigo-500/50">
+                    Next &#9654;
+                </button>
+                <button id="finish-btn" class="hidden py-2 px-6 bg-emerald-600 text-white font-semibold rounded-full hover:bg-emerald-700 shadow-md shadow-emerald-500/50">
+                    Finish Quiz 🏁
+                </button>
+            </div>
+
+
+            <!-- Result View (Hidden initially) -->
+            <div id="result-view" class="text-center space-y-4 hidden pt-6 border-t border-gray-200">
+                <h3 class="text-3xl font-black text-indigo-600">Quiz Complete!</h3>
+                <p class="text-2xl text-gray-700">Final Score: <span id="final-score" class="text-yellow-600 font-extrabold"></span>/10</p>
+                <p id="feedback-message" class="text-lg text-gray-600"></p>
+                <button onclick="location.reload()" class="mt-4 py-3 px-8 bg-pink-500 text-white font-black rounded-full shadow-lg hover:bg-pink-600">Start Over</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const quizQuestions = [
+            { question: "What does HTML stand for?", options: ["Hyper Text Markup Language", "High Tech Multi Language", "Home Tool Markup Language"], answer: "Hyper Text Markup Language", answered: false },
+            { question: "Which is a CSS preprocessor?", options: ["Sass", "TypeScript", "Babel", "Webpack"], answer: "Sass", answered: false },
+            { question: "What is the primary function of JavaScript?", options: ["Styling web pages", "Creating database schemas", "Adding interactivity", "Server management"], answer: "Adding interactivity", answered: false },
+            { question: "The 'key' in a JavaScript object is typically what data type?", options: ["Array", "Object", "String", "Number"], answer: "String", answered: false },
+            { question: "Which HTTP method is used to submit data to a specified resource?", options: ["GET", "POST", "PUT", "DELETE"], answer: "POST", answered: false },
+            { question: "What is the result of '5' + 3 in JavaScript?", options: ["8", "53", "NaN", "Error"], answer: "53", answered: false },
+            { question: "Which property changes the background color in CSS?", options: ["color", "background-color", "bgcolor", "background"], answer: "background-color", answered: false },
+            { question: "What is Git primarily used for?", options: ["Database storage", "Version control", "User authentication", "Image editing"], answer: "Version control", answered: false },
+            { question: "In Angular, what is the decorator used for components?", options: ["@Module", "@Injectable", "@Component", "@Pipe"], answer: "@Component", answered: false },
+            { question: "Which company created React?", options: ["Google", "Microsoft", "Facebook", "Amazon"], answer: "Facebook", answered: false }
+        ];
+
+        let currentQuestionIndex = 0;
+        let score = 0;
+        
+        // --- Utility Functions ---
+        function showMessage(text, isError = false) {
+            const $msgBox = $('#message-box');
+            $msgBox.text(text).removeClass('hidden bg-red-500 bg-emerald-500').addClass(isError ? 'bg-red-500' : 'bg-emerald-500');
+            setTimeout(() => $msgBox.addClass('hidden'), 3000);
+        }
+        
+        // --- Validation Logic (Sign-Up) ---
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        let allInputsValid = false;
+
+        function checkFormValidity() {
+            let formValid = true;
+            $('#signup-form input').each(function() {
+                const $input = $(this);
+                const isEmail = $input.attr('id') === 'email';
+                const isValid = $input.val().trim() !== '' && (isEmail ? emailRegex.test($input.val().trim().toLowerCase()) : $input.val().trim().length >= 3);
+                if (!isValid) formValid = false;
+            });
+            
+            const $btn = $('#start-quiz-btn');
+            if (formValid) {
+                $btn.prop('disabled', false).removeClass('bg-gray-400 text-gray-800').addClass('bg-indigo-600 text-white hover:bg-indigo-700 shadow-md shadow-indigo-500/50');
+            } else {
+                $btn.prop('disabled', true).addClass('bg-gray-400 text-gray-800').removeClass('bg-indigo-600 text-white hover:bg-indigo-700 shadow-md shadow-indigo-500/50');
+            }
+            allInputsValid = formValid;
+        }
+
+        function validateInput($input) {
+            const value = $input.val().trim();
+            const isEmail = $input.attr('id') === 'email';
+            const $errorSpan = $input.closest('div').find('.error-message');
+            const isValid = value !== '' && (isEmail ? emailRegex.test(value.toLowerCase()) : value.length >= 3);
+
+            // Apply border color classes
+            $input.removeClass('border-red-500 border-emerald-500 border-indigo-300').addClass(
+                isValid ? 'border-emerald-500' : 'border-red-500'
+            );
+            
+            // Show error message using .text()
+            if (value === '') {
+                $errorSpan.text('This field is required.').addClass('text-red-500').removeClass('text-emerald-500');
+            } else if (!isValid) {
+                $errorSpan.text(isEmail ? 'Invalid email format.' : 'Must be at least 3 characters.').addClass('text-red-500').removeClass('text-emerald-500');
+            } else {
+                $errorSpan.text('Valid.').addClass('text-emerald-500').removeClass('text-red-500');
+            }
+            checkFormValidity();
+        }
+
+        // Bind validation events
+        $('#signup-form input').on('keyup blur', function() {
+            validateInput($(this));
+        });
+        
+        // --- Firestore & Sign-Up Submission ---
+        $('#signup-form').on('submit', async function(e) {
+            e.preventDefault();
+            if (!allInputsValid) return showMessage("Please correct the validation errors.", true);
+
+            const profileData = { 
+                name: $('#name').val().trim(), 
+                courseSection: $('#course-section').val().trim(), 
+                email: $('#email').val().trim(), 
+                timestamp: new Date().toISOString() 
+            };
+            
+            const db = window.db;
+            const appId = window.appId;
+            const userId = window.getUserId();
+
+            if (db && userId !== 'anonymous') {
+                try {
+                    // Save profile to Firestore
+                    const profileDocRef = doc(db, `artifacts/${appId}/users/${userId}/quiz_profiles/user_profile`);
+                    await setDoc(profileDocRef, profileData);
+                    showMessage("Profile saved! Starting quiz.", false);
+                } catch (e) {
+                    console.error("Error saving profile:", e);
+                    showMessage("Error saving profile to database.", true);
+                }
+            }
+
+            // Transition to quiz view
+            $('#signup-view').fadeOut(500, () => {
+                renderAllQuestions(); // Render all questions hidden
+                $('#quiz-view').fadeIn(500);
+                showQuestion(currentQuestionIndex); // Show the first one
+            });
+        });
+
+        // --- Quiz Rendering & Navigation Logic ---
+        
+        // 1. Render all questions once
+        function renderAllQuestions() {
+            const $container = $('#questions-container');
+            $container.empty();
+
+            quizQuestions.forEach((q, index) => {
+                const questionHtml = `
+                    <div id="q-card-${index}" class="question-card p-4">
+                        <!-- Header with Question Text and Toggle Button -->
+                        <div class="flex justify-between items-center pb-3 border-b border-blue-200">
+                            <p class="text-lg font-bold text-gray-700">${index + 1}. ${q.question}</p>
+                            <button class="toggle-question-btn text-sm text-indigo-500 hover:text-indigo-700 ml-4 p-1 rounded-md transition duration-150 ease-in-out flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+                                </svg>
+                                Hide Options
+                            </button>
+                        </div>
+                        
+                        <!-- Content to be toggled (initially shown) -->
+                        <div class="question-content-toggle pt-3">
+                            <div class="options-group space-y-2">
+                                ${q.options.map(option => `
+                                    <button data-answer="${option}" data-q-index="${index}"
+                                            class="option-button w-full text-left p-3 bg-white border-2 border-indigo-300 text-gray-700 rounded-lg focus:outline-none text-sm hover:border-indigo-500">
+                                        ${option}
+                                    </button>
+                                `).join('')}
+                            </div>
+                            <div class="feedback-area mt-4 h-6 text-sm font-medium text-center"></div>
+                        </div>
+                    </div>
+                `;
+                $container.append(questionHtml);
+            });
+            
+            // Bind handlers
+            $('.option-button').off('click').on('click', handleAnswer);
+            $('.toggle-question-btn').off('click').on('click', handleToggle);
+        }
+
+        // 2. Function to show a specific question card
+        function showQuestion(index) {
+            $('.question-card').hide(); // Hide all questions
+            $(`#q-card-${index}`).fadeIn(300); // Show the requested question
+
+            // Update header
+            $('#current-q-number').text(index + 1);
+            currentQuestionIndex = index;
+
+            // Update Nav Buttons State
+            $('#prev-btn').prop('disabled', index === 0);
+            
+            if (index === quizQuestions.length - 1) {
+                $('#next-btn').hide();
+                $('#finish-btn').show();
+            } else {
+                $('#next-btn').show();
+                $('#finish-btn').hide();
+            }
+        }
+        
+        // 3. Handle Question Toggle (Show/Hide button)
+        function handleToggle() {
+            const $btn = $(this);
+            const $icon = $btn.find('svg');
+            const $content = $btn.closest('.question-card').find('.question-content-toggle');
+            
+            $content.slideToggle(300, function() {
+                if ($content.is(':visible')) {
+                    $btn.html('<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>Hide Options');
+                } else {
+                    $btn.html('<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>Show Options');
+                }
+            });
+        }
+
+
+        // 4. Handle Answer Click
+        function handleAnswer() {
+            const $clicked = $(this);
+            const qIndex = $clicked.data('q-index');
+            
+            // Check if already answered
+            if (quizQuestions[qIndex].answered) return;
+            quizQuestions[qIndex].answered = true;
+
+            const selectedAnswer = $clicked.data('answer');
+            const currentQ = quizQuestions[qIndex];
+            const isCorrect = selectedAnswer === currentQ.answer;
+
+            const $feedback = $clicked.closest('.question-card').find('.feedback-area');
+            const $qOptions = $(`#q-card-${qIndex} .option-button`);
+
+            // Disable all options for this question
+            $qOptions.prop('disabled', true).addClass('opacity-50');
+
+            // Score and visual feedback
+            if (isCorrect) {
+                score++;
+                $clicked.removeClass('bg-white border-indigo-300').addClass('bg-emerald-500 text-white ring-4 ring-emerald-300 font-bold');
+                $feedback.html('<span class="text-emerald-600 font-bold">✅ That\'s right! Keep going!</span>');
+            } else {
+                $clicked.removeClass('bg-white border-indigo-300').addClass('bg-red-500 text-white ring-4 ring-red-300');
+                // Highlight the correct answer
+                $(`button[data-answer="${currentQ.answer}"][data-q-index="${qIndex}"]`).removeClass('opacity-50 bg-white border-indigo-300').addClass('bg-yellow-400 text-gray-900 font-bold shadow-lg');
+                $feedback.html('<span class="text-red-600 font-bold">❌ Not quite. The correct answer is highlighted.</span>');
+            }
+
+            $('#score-tally').text(score);
+        }
+
+        // 5. Navigation Handlers
+        $('#prev-btn').on('click', () => {
+            if (currentQuestionIndex > 0) {
+                showQuestion(currentQuestionIndex - 1);
+            }
+        });
+
+        $('#next-btn').on('click', () => {
+            if (currentQuestionIndex < quizQuestions.length - 1) {
+                showQuestion(currentQuestionIndex + 1);
+            }
+        });
+        
+        $('#finish-btn').on('click', showResult);
+
+        // 6. Show Final Result
+        function showResult() {
+            const percentage = (score / quizQuestions.length) * 100;
+            let feedback;
+            if (percentage === 100) {
+                feedback = 'Absolute master! You crushed the quiz!';
+            } else if (percentage >= 80) {
+                feedback = 'Fantastic effort! You nearly aced it.';
+            } else if (percentage >= 50) {
+                feedback = 'Good start! A bit more review and you\'ll be a pro.';
+            } else {
+                feedback = 'Time to review! You can do better next time.';
+            }
+
+            $('#questions-container').slideUp(500);
+            $('#nav-buttons').slideUp(500, () => {
+                $('#final-score').text(score);
+                $('#feedback-message').html(`<span class="text-indigo-600 font-black">${feedback}</span>`);
+                $('#result-view').fadeIn(500);
+            });
+        }
+
+        // Display initial User ID
+        $('#current-user-id').text(typeof __initial_auth_token !== 'undefined' ? 'Authenticating...' : 'Signing in...');
+    </script>
+</body>
+</html>
